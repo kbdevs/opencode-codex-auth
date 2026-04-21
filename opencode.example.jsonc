@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    [
+      "file:///absolute/path/to/opencode-codex",
+      {
+        "accountsPath": "~/.config/opencode/codex-accounts.json",
+        "fastVariantName": "fast",
+        "reasoningEffort": "low"
+      }
+    ]
+  ]
+}
