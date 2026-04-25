@@ -2,41 +2,15 @@ import {
   DEFAULT_ACCOUNTS_PATH,
   getPlaceholderApiKey,
 } from "./lib/accounts.js"
+import {
+  DEFAULT_CLIENT_VERSION,
+  DEFAULT_MODELS,
+  discoverProviderModels,
+} from "./lib/models.js"
 import { createMultiAccountFetch } from "./lib/openai-fetch.js"
 
 const DEFAULT_FAST_VARIANT = "fast"
 const DEFAULT_PROVIDER_ID = "openai"
-
-function createModel(name) {
-  return {
-    name,
-    reasoning: true,
-    attachment: true,
-    tool_call: true,
-    modalities: {
-      input: ["text", "image", "pdf"],
-      output: ["text"],
-    },
-    limit: {
-      context: 400000,
-      output: 128000,
-    },
-  }
-}
-
-const DEFAULT_MODELS = {
-  "gpt-5-codex": createModel("GPT-5 Codex"),
-  "gpt-5.1-codex": createModel("GPT-5.1 Codex"),
-  "gpt-5.1-codex-mini": createModel("GPT-5.1 Codex mini"),
-  "gpt-5.1-codex-max": createModel("GPT-5.1 Codex Max"),
-  "gpt-5.2-codex": createModel("GPT-5.2 Codex"),
-  "gpt-5.3-codex": createModel("GPT-5.3 Codex"),
-  "gpt-5": createModel("GPT-5"),
-  "gpt-5.1": createModel("GPT-5.1"),
-  "gpt-5.2": createModel("GPT-5.2"),
-  "gpt-5.4": createModel("GPT-5.4"),
-  "gpt-5.4-mini": createModel("GPT-5.4 mini"),
-}
 
 function stringOrUndefined(value) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
@@ -58,22 +32,47 @@ function fastVariantName(options) {
   return stringOrUndefined(options.fastVariantName) || DEFAULT_FAST_VARIANT
 }
 
-function mergedModels(existingModels = {}, options = {}) {
+function shouldAddFastVariant(modelId, defaults, modelIds) {
+  const apiModelId = typeof defaults.id === "string" ? defaults.id : modelId
+  return (
+    modelId !== "gpt-5.5" &&
+    apiModelId !== "gpt-5.5" &&
+    !modelId.endsWith("-fast") &&
+    !apiModelId.endsWith("-fast") &&
+    !modelIds.has(`${modelId}-fast`) &&
+    !modelIds.has(`${apiModelId}-fast`)
+  )
+}
+
+function clientVersion(options) {
+  return (
+    stringOrUndefined(options.clientVersion) ||
+    stringOrUndefined(process.env.OPENCODE_CODEX_CLIENT_VERSION) ||
+    DEFAULT_CLIENT_VERSION
+  )
+}
+
+function mergedModels(existingModels = {}, discoveredCatalog = { models: {}, resolved: false }, options = {}) {
   const variantName = fastVariantName(options)
+  const defaultsById = discoveredCatalog.resolved ? discoveredCatalog.models : DEFAULT_MODELS
+  const modelIds = new Set(Object.keys(defaultsById))
   const result = { ...existingModels }
 
-  for (const [modelId, defaults] of Object.entries(DEFAULT_MODELS)) {
+  for (const [modelId, defaults] of Object.entries(defaultsById)) {
     const existing = result[modelId] ?? {}
+    const variants = { ...(defaults.variants ?? {}), ...(existing.variants ?? {}) }
+
+    if (shouldAddFastVariant(modelId, defaults, modelIds)) {
+      variants[variantName] = {
+        ...(existing.variants?.[variantName] ?? {}),
+        serviceTier: "priority",
+      }
+    }
+
     result[modelId] = {
       ...defaults,
       ...existing,
-      variants: {
-        ...(existing.variants ?? {}),
-        [variantName]: {
-          ...(existing.variants?.[variantName] ?? {}),
-          serviceTier: "priority",
-        },
-      },
+      variants,
     }
   }
 
@@ -101,11 +100,17 @@ export async function OpencodeCodexMultiAuthPlugin(_input, rawOptions = {}) {
     async config(config) {
       config.provider = config.provider ?? {}
       const existing = config.provider[targetProvider] ?? {}
+      const discoveredModels = await discoverProviderModels({
+        accountsPath: pluginOptions.accountsPath,
+        forcedAccountId: pluginOptions.accountId,
+        debug: pluginOptions.debug,
+        clientVersion: clientVersion(options),
+      })
 
       config.provider[targetProvider] = {
         ...existing,
         name: existing.name ?? "Codex",
-        models: mergedModels(existing.models ?? {}, options),
+        models: mergedModels(existing.models ?? {}, discoveredModels, options),
         options: {
           ...(existing.options ?? {}),
           reasoningEffort:

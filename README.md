@@ -7,8 +7,8 @@ Local OpenCode plugin that rotates between multiple Codex OAuth accounts for Cod
 - Routes OpenCode `openai/*` requests through a local account registry.
 - Supports ChatGPT/Codex OAuth logins only. No API-key mode.
 - Supports easy `login`, `remove`, `enable`, `disable`, `default`, and `strategy` account management.
-- Injects common Codex and GPT-5 coding model entries into the OpenCode `openai` provider config.
-- Adds a `fast` model variant that maps to `serviceTier: "priority"` / `*-fast` model IDs.
+- Fetches the Codex model catalog each enabled account can use and injects the union into the OpenCode `openai` provider config.
+- Adds a `fast` model variant that requests `serviceTier: "priority"` for non-fast models.
 - Defaults OpenCode requests to `reasoningEffort: "low"` when no provider default is already set.
 
 The plugin refreshes ChatGPT/Codex OAuth tokens and forwards OpenCode's Responses API traffic to the ChatGPT Codex backend.
@@ -34,6 +34,7 @@ The plugin refreshes ChatGPT/Codex OAuth tokens and forwards OpenCode's Response
       "file:///absolute/path/to/opencode-codex",
       {
         "accountsPath": "~/.config/opencode/codex-accounts.json",
+        "clientVersion": "1.0.0",
         "fastVariantName": "fast",
         "reasoningEffort": "low"
       }
@@ -65,13 +66,12 @@ node ./scripts/accounts.mjs default personal
 
 5. Start OpenCode and pick models from the `openai` provider, for example:
 
-- `openai/gpt-5-codex`
-- `openai/gpt-5.1-codex`
-- `openai/gpt-5.1-codex-mini`
-- `openai/gpt-5.1-codex-max`
-- `openai/gpt-5.2-codex`
+- `openai/gpt-5.3-codex`
 - `openai/gpt-5.4`
+- `openai/gpt-5.5`
 - `openai/gpt-5.4/fast`
+
+The plugin fetches those model IDs from `https://chatgpt.com/backend-api/codex/models` at startup using each enabled OAuth account, then caches the discovered slugs in the registry so account rotation can respect per-account model access.
 
 ## Registry format
 
@@ -98,7 +98,9 @@ The default registry path is `~/.config/opencode/codex-accounts.json`.
       "lastRefresh": "2026-04-20T23:10:10.889Z",
       "enabled": true,
       "includeModels": [],
-      "excludeModels": []
+      "excludeModels": [],
+      "availableModels": ["gpt-5.4", "gpt-5.5"],
+      "availableModelsFetchedAt": 1777590611000
     }
   ]
 }
@@ -122,11 +124,14 @@ Run those commands from the repository root, or replace `./scripts/accounts.mjs`
 
 - `OPENCODE_CODEX_ACCOUNTS_FILE` overrides the registry path.
 - `OPENCODE_CODEX_ACCOUNT` forces a specific configured account for the current process.
+- `clientVersion` plugin option overrides the `client_version` used when fetching the Codex model catalog. Default: `1.0.0`.
+- `OPENCODE_CODEX_CLIENT_VERSION` overrides the `client_version` used when fetching the Codex model catalog. Default: `1.0.0`.
 - `OPENCODE_CODEX_DEBUG=1` enables plugin debug logging.
 - `OPENCODE_CODEX_REASONING_EFFORT` overrides the default reasoning effort used when OpenCode does not set one.
 
 ## Notes
 
 - OAuth accounts are sent to `https://chatgpt.com/backend-api/codex/responses` with account-specific OAuth headers.
+- Model discovery uses `https://chatgpt.com/backend-api/codex/models?client_version=...` and falls back to a baked-in model list if discovery is unavailable.
 - Unsupported non-OAuth entries are ignored if they appear in imported legacy registries.
 - The `fast` variant maps request intent to `serviceTier: "priority"`. On ChatGPT-backed Codex OAuth accounts, the backend currently reports `service_tier: "auto"` in responses even when the fast variant is requested.
