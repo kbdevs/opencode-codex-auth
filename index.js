@@ -6,6 +6,7 @@ import {
   DEFAULT_CLIENT_VERSION,
   DEFAULT_MODELS,
   discoverProviderModels,
+  isGpt55ModelId,
 } from "./lib/models.js"
 import { createMultiAccountFetch } from "./lib/openai-fetch.js"
 
@@ -30,6 +31,28 @@ function providerId(options) {
 
 function fastVariantName(options) {
   return stringOrUndefined(options.fastVariantName) || DEFAULT_FAST_VARIANT
+}
+
+function finitePositiveNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined
+}
+
+function mergedLimit(modelId, defaults, existing) {
+  const defaultLimit = defaults.limit ?? {}
+  const existingLimit = existing.limit ?? {}
+  const merged = { ...defaultLimit, ...existingLimit }
+  const apiModelId = typeof defaults.id === "string" ? defaults.id : modelId
+
+  if (isGpt55ModelId(modelId) || isGpt55ModelId(apiModelId)) {
+    const context = Math.max(
+      finitePositiveNumber(defaultLimit.context) ?? 0,
+      finitePositiveNumber(existingLimit.context) ?? 0,
+    )
+
+    if (context > 0) merged.context = context
+  }
+
+  return Object.keys(merged).length > 0 ? merged : undefined
 }
 
 function shouldAddFastVariant(modelId, defaults, modelIds) {
@@ -61,6 +84,7 @@ function mergedModels(existingModels = {}, discoveredCatalog = { models: {}, res
   for (const [modelId, defaults] of Object.entries(defaultsById)) {
     const existing = result[modelId] ?? {}
     const variants = { ...(defaults.variants ?? {}), ...(existing.variants ?? {}) }
+    const limit = mergedLimit(modelId, defaults, existing)
 
     if (shouldAddFastVariant(modelId, defaults, modelIds)) {
       variants[variantName] = {
@@ -73,6 +97,7 @@ function mergedModels(existingModels = {}, discoveredCatalog = { models: {}, res
       ...defaults,
       ...existing,
       variants,
+      ...(limit ? { limit } : {}),
     }
   }
 
