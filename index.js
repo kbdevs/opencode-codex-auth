@@ -37,6 +37,17 @@ function finitePositiveNumber(value) {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined
 }
 
+function modelIdSlug(modelId) {
+  if (typeof modelId !== "string") return ""
+  const trimmed = modelId.trim()
+  return trimmed.includes("/") ? trimmed.split("/").pop() : trimmed
+}
+
+function gpt55DefaultsFor(modelId) {
+  const slug = modelIdSlug(modelId)
+  return DEFAULT_MODELS[slug] ?? DEFAULT_MODELS[modelId] ?? DEFAULT_MODELS["gpt-5.5"]
+}
+
 function mergedLimit(modelId, defaults, existing) {
   const defaultLimit = defaults.limit ?? {}
   const existingLimit = existing.limit ?? {}
@@ -95,6 +106,21 @@ function mergedModels(existingModels = {}, discoveredCatalog = { models: {}, res
 
     result[modelId] = {
       ...defaults,
+      ...existing,
+      variants,
+      ...(limit ? { limit } : {}),
+    }
+  }
+
+  for (const [modelId, existing] of Object.entries(result)) {
+    const apiModelId = typeof existing.id === "string" ? existing.id : modelId
+    if (!isGpt55ModelId(modelId) && !isGpt55ModelId(apiModelId)) continue
+
+    const defaults = gpt55DefaultsFor(apiModelId) ?? gpt55DefaultsFor(modelId)
+    const variants = { ...(defaults.variants ?? {}), ...(existing.variants ?? {}) }
+    const limit = mergedLimit(modelId, defaults, existing)
+
+    result[modelId] = {
       ...existing,
       variants,
       ...(limit ? { limit } : {}),
