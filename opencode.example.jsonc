@@ -6,7 +6,6 @@
       {
         "accountsPath": "~/.config/opencode/codex-accounts.json",
         "clientVersion": "1.0.0",
-        "fastVariantName": "fast",
         "reasoningEffort": "low"
       }
     ]

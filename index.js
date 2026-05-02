@@ -10,8 +10,7 @@ import {
 } from "./lib/models.js"
 import { createMultiAccountFetch } from "./lib/openai-fetch.js"
 
-const DEFAULT_FAST_VARIANT = "fast"
-const DEFAULT_PROVIDER_ID = "openai"
+const DEFAULT_PROVIDER_ID = "codex"
 
 function stringOrUndefined(value) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
@@ -27,10 +26,6 @@ function configuredAccountsPath(options) {
 
 function providerId(options) {
   return stringOrUndefined(options.providerId) || DEFAULT_PROVIDER_ID
-}
-
-function fastVariantName(options) {
-  return stringOrUndefined(options.fastVariantName) || DEFAULT_FAST_VARIANT
 }
 
 function finitePositiveNumber(value) {
@@ -66,16 +61,55 @@ function mergedLimit(modelId, defaults, existing) {
   return Object.keys(merged).length > 0 ? merged : undefined
 }
 
-function shouldAddFastVariant(modelId, defaults, modelIds) {
-  const apiModelId = typeof defaults.id === "string" ? defaults.id : modelId
+function isArtificialCodexAlias(modelId, model) {
+  const apiModelId = typeof model.id === "string" ? model.id : modelId
   return (
-    modelId !== "gpt-5.5" &&
-    apiModelId !== "gpt-5.5" &&
+    apiModelId !== modelId &&
+    !apiModelId.includes("codex") &&
+    (modelId.endsWith("-codex") || modelId.endsWith("-codex-fast"))
+  )
+}
+
+function priorityVariants(variants = {}) {
+  return Object.fromEntries(
+    Object.entries(variants).map(([variantId, variant]) => [
+      variantId,
+      {
+        ...variant,
+        serviceTier: "priority",
+      },
+    ]),
+  )
+}
+
+function shouldAddFastModel(modelId, model, modelIds) {
+  const apiModelId = typeof model.id === "string" ? model.id : modelId
+  return (
     !modelId.endsWith("-fast") &&
     !apiModelId.endsWith("-fast") &&
     !modelIds.has(`${modelId}-fast`) &&
     !modelIds.has(`${apiModelId}-fast`)
   )
+}
+
+function withFastModels(models) {
+  const result = { ...models }
+  const modelIds = new Set(Object.keys(result))
+
+  for (const [modelId, model] of Object.entries(models)) {
+    if (!shouldAddFastModel(modelId, model, modelIds)) continue
+
+    const fastModelId = `${modelId}-fast`
+    result[fastModelId] = {
+      ...model,
+      id: typeof model.id === "string" ? model.id : modelId,
+      name: `${model.name ?? modelId} Fast`,
+      variants: priorityVariants(model.variants),
+    }
+    modelIds.add(fastModelId)
+  }
+
+  return result
 }
 
 function clientVersion(options) {
@@ -87,22 +121,23 @@ function clientVersion(options) {
 }
 
 function mergedModels(existingModels = {}, discoveredCatalog = { models: {}, resolved: false }, options = {}) {
-  const variantName = fastVariantName(options)
-  const defaultsById = discoveredCatalog.resolved ? discoveredCatalog.models : DEFAULT_MODELS
-  const modelIds = new Set(Object.keys(defaultsById))
+  const discoveredModels = discoveredCatalog.resolved ? discoveredCatalog.models : {}
+  const baseDefaultsById = discoveredCatalog.resolved
+    ? {
+        ...discoveredModels,
+        "gpt-5.5": discoveredModels["gpt-5.5"] ?? DEFAULT_MODELS["gpt-5.5"],
+        "gpt-5.5-fast": discoveredModels["gpt-5.5-fast"] ?? DEFAULT_MODELS["gpt-5.5-fast"],
+        "gpt-5.5-codex": discoveredModels["gpt-5.5-codex"] ?? DEFAULT_MODELS["gpt-5.5-codex"],
+        "gpt-5.5-codex-fast": discoveredModels["gpt-5.5-codex-fast"] ?? DEFAULT_MODELS["gpt-5.5-codex-fast"],
+      }
+    : DEFAULT_MODELS
+  const defaultsById = withFastModels(baseDefaultsById)
   const result = { ...existingModels }
 
   for (const [modelId, defaults] of Object.entries(defaultsById)) {
     const existing = result[modelId] ?? {}
     const variants = { ...(defaults.variants ?? {}), ...(existing.variants ?? {}) }
     const limit = mergedLimit(modelId, defaults, existing)
-
-    if (shouldAddFastVariant(modelId, defaults, modelIds)) {
-      variants[variantName] = {
-        ...(existing.variants?.[variantName] ?? {}),
-        serviceTier: "priority",
-      }
-    }
 
     result[modelId] = {
       ...defaults,
@@ -124,6 +159,12 @@ function mergedModels(existingModels = {}, discoveredCatalog = { models: {}, res
       ...existing,
       variants,
       ...(limit ? { limit } : {}),
+    }
+  }
+
+  if (providerId(options) === "codex") {
+    for (const [modelId, model] of Object.entries(result)) {
+      if (isArtificialCodexAlias(modelId, model)) delete result[modelId]
     }
   }
 
