@@ -11,6 +11,7 @@ import {
 import { createMultiAccountFetch } from "./lib/openai-fetch.js"
 
 const DEFAULT_PROVIDER_ID = "codex"
+const OPENAI_PROVIDER_NPM = "@ai-sdk/openai"
 
 function stringOrUndefined(value) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
@@ -142,6 +143,7 @@ function mergedModels(existingModels = {}, discoveredCatalog = { models: {}, res
     result[modelId] = {
       ...defaults,
       ...existing,
+      provider: existing.provider ?? defaults.provider ?? { npm: OPENAI_PROVIDER_NPM },
       variants,
       ...(limit ? { limit } : {}),
     }
