@@ -6,7 +6,6 @@ import {
   DEFAULT_CLIENT_VERSION,
   DEFAULT_MODELS,
   discoverProviderModels,
-  isGpt55ModelId,
 } from "./lib/models.js"
 import { createMultiAccountFetch } from "./lib/openai-fetch.js"
 
@@ -29,36 +28,10 @@ function providerId(options) {
   return stringOrUndefined(options.providerId) || DEFAULT_PROVIDER_ID
 }
 
-function finitePositiveNumber(value) {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined
-}
-
-function modelIdSlug(modelId) {
-  if (typeof modelId !== "string") return ""
-  const trimmed = modelId.trim()
-  return trimmed.includes("/") ? trimmed.split("/").pop() : trimmed
-}
-
-function gpt55DefaultsFor(modelId) {
-  const slug = modelIdSlug(modelId)
-  return DEFAULT_MODELS[slug] ?? DEFAULT_MODELS[modelId] ?? DEFAULT_MODELS["gpt-5.5"]
-}
-
 function mergedLimit(modelId, defaults, existing) {
   const defaultLimit = defaults.limit ?? {}
   const existingLimit = existing.limit ?? {}
   const merged = { ...defaultLimit, ...existingLimit }
-  const apiModelId = typeof defaults.id === "string" ? defaults.id : modelId
-
-  if (isGpt55ModelId(modelId) || isGpt55ModelId(apiModelId)) {
-    const context = Math.max(
-      finitePositiveNumber(defaultLimit.context) ?? 0,
-      finitePositiveNumber(existingLimit.context) ?? 0,
-    )
-
-    if (context > 0) merged.context = context
-  }
-
   return Object.keys(merged).length > 0 ? merged : undefined
 }
 
@@ -144,21 +117,6 @@ function mergedModels(existingModels = {}, discoveredCatalog = { models: {}, res
       ...defaults,
       ...existing,
       provider: existing.provider ?? defaults.provider ?? { npm: OPENAI_PROVIDER_NPM },
-      variants,
-      ...(limit ? { limit } : {}),
-    }
-  }
-
-  for (const [modelId, existing] of Object.entries(result)) {
-    const apiModelId = typeof existing.id === "string" ? existing.id : modelId
-    if (!isGpt55ModelId(modelId) && !isGpt55ModelId(apiModelId)) continue
-
-    const defaults = gpt55DefaultsFor(apiModelId) ?? gpt55DefaultsFor(modelId)
-    const variants = { ...(defaults.variants ?? {}), ...(existing.variants ?? {}) }
-    const limit = mergedLimit(modelId, defaults, existing)
-
-    result[modelId] = {
-      ...existing,
       variants,
       ...(limit ? { limit } : {}),
     }
