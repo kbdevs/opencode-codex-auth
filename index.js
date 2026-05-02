@@ -205,6 +205,9 @@ export async function OpencodeCodexMultiAuthPlugin(_input, rawOptions = {}) {
         models: mergedModels(existing.models ?? {}, discoveredModels, options),
         options: {
           ...(existing.options ?? {}),
+          apiKey: existing.options?.apiKey ?? pluginOptions.placeholderApiKey,
+          baseURL: existing.options?.baseURL ?? "https://api.openai.com/v1",
+          fetch: existing.options?.fetch ?? createMultiAccountFetch(pluginOptions),
           reasoningEffort:
             existing.options?.reasoningEffort ??
             stringOrUndefined(options.reasoningEffort) ??
